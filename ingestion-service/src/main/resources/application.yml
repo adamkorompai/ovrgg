@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: ingestion-service
+
+server:
+  port: 8081
+
+ovr:
+  # fake | riot (riot: roadmap step 3)
+  match-source: ${OVR_MATCH_SOURCE:fake}
