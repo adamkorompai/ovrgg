@@ -1,6 +1,29 @@
 spring:
   application:
     name: api-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+    consumer:
+      # Group id is unique per instance (CardUpdatedListener): always starts from the oldest card.
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.value.default.type: gg.ovr.common.card.CardUpdated
+        spring.json.use.type.headers: false
 
 server:
   port: 8080
+
+ovr:
+  # fake | riot (riot: roadmap step 3)
+  account-source: ${OVR_ACCOUNT_SOURCE:fake}
+  api:
+    # An open card stream is closed after this delay; the client reconnects if it still needs it.
+    card-stream-timeout: 2m
