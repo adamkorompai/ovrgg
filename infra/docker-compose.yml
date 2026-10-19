@@ -35,6 +35,28 @@ services:
       timeout: 10s
       retries: 10
 
+  # One-shot container: declares every topic, then exits. Safe to re-run (--if-not-exists).
+  # 3 partitions = up to 3 instances of a consumer service in parallel; replication 1 = single broker.
+  kafka-init:
+    image: apache/kafka:4.1.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        create() {
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists \
+            --partitions 3 --replication-factor 1 --topic "$$@"
+        }
+        create player.lookup-requested
+        create match.raw
+        create match.performance
+        # Compacted: Kafka keeps at least the latest card of each puuid, so the topic can be replayed as a table.
+        create card.updated --config cleanup.policy=compact
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --describe
+
   kafka-ui:
     image: ghcr.io/kafbat/kafka-ui:v1.2.0
     ports:
