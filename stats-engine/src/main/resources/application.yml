@@ -1,6 +1,13 @@
 spring:
   application:
     name: stats-engine
-
-server:
-  port: 8082
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    streams:
+      # Consumer group id, and prefix of the internal topics Kafka Streams may create.
+      application-id: stats-engine
+      properties:
+        # An unreadable match is logged and skipped instead of stopping the stream (DLQ later).
+        default.deserialization.exception.handler: org.apache.kafka.streams.errors.LogAndContinueExceptionHandler
+        # Same for a match that fails during processing (e.g. missing metadata): skipped instead of a crash loop.
+        processing.exception.handler: org.apache.kafka.streams.errors.LogAndContinueProcessingExceptionHandler
