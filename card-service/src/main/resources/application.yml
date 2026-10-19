@@ -1,6 +1,28 @@
 spring:
   application:
     name: card-service
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:ovrgg}
+    username: ${POSTGRES_USER:ovrgg}
+    password: ${POSTGRES_PASSWORD:ovrgg}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+    consumer:
+      # Group ids are set per listener (CardListeners).
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        # The target type is set per listener: this service reads two kinds of messages.
+        spring.json.use.type.headers: false
+    listener:
+      concurrency: 3
 
 server:
   port: 8083
