@@ -13,13 +13,13 @@ La note ne repose jamais sur 2 ou 3 stats. Le modèle :
 4. les regroupe en **sous-stats → 6 attributs**,
 5. pondère les attributs **selon le rôle** → score de performance du match,
 6. agrège les matchs (récence + fiabilité statistique),
-7. place le résultat dans la **plage du rang officiel** → note OVR.
+7. convertit le score agrégé en **note OVR (1–99)**, sans plage de rang : l'OVR mesure à quel point le joueur domine les parties **de son niveau**.
 
 ## 2. Sources de données
 
 - **MATCH-V5** (`/lol/match/v5/matches/{matchId}`) : stats de fin de partie par participant + objet `challenges`.
 - **TIMELINE-V5** (`/lol/match/v5/matches/{matchId}/timeline`) : frames par minute (or, XP, CS, position) + événements (kills avec position, wards, objectifs, achats).
-- **LEAGUE-V4** : rang officiel du joueur (définit la plage de note).
+- **LEAGUE-V4** : rang officiel du joueur (choisit la baseline de comparaison §5, affiché en badge sur la carte).
 
 ## 3. Filtres
 
@@ -127,26 +127,21 @@ Chaque attribut = moyenne pondérée de ses sous-stats (percentiles 0–100). Le
 - **Fiabilité (shrinkage bayésien)** : `scoreFinal = (n × moyenne + k × 50) / (n + k)` avec `k = 8`. Peu de parties → note tirée vers la moyenne.
 - **Régularité** : écart-type des `matchScore` → badge "Régulier" / "Imprévisible", n'affecte pas la note.
 
-## 8. Mapping dans la plage du rang → OVR
+## 8. Score agrégé → OVR
 
-| Rang officiel | Plage OVR |
-|---|---|
-| Fer – Bronze | 40–55 |
-| Argent | 52–64 |
-| Or | 60–72 |
-| Platine – Émeraude | 68–80 |
-| Diamant | 75–85 |
-| Master – Grandmaster | 85–92 |
-| Top du ladder (Challenger, top 500 région) | 93–99 |
+`OVR = round(clamp(scoreFinal, 1, 99))`. Aucune plage par rang.
 
-`OVR = min + (max - min) × scoreFinal / 100`, arrondi à l'entier.
-Les plages se chevauchent volontairement : un très bon Argent peut dépasser un mauvais Or.
+- Le rang n'intervient **qu'à travers les baselines** (§5) : l'OVR est une performance relative aux joueurs du même rang × même rôle. Un Or qui domine toutes ses parties peut afficher 95 ; un Challenger moyen dans ses parties affiche ~50.
+- Les **attributs affichés** sur la carte sont les percentiles agrégés, sur la même échelle.
+- **À calibrer à l'étape 4** : avec le shrinkage du §7, un joueur à 98 de moyenne sur 30 parties plafonne à ~88. Il faut étaler le haut de l'échelle (k plus petit, ou courbe sur `scoreFinal`) pour qu'une domination régulière atteigne 90+.
 
-Les **attributs affichés** sur la carte sont les percentiles agrégés (pas bornés par la plage du rang) : un Or peut afficher 90 en VIS.
+> Historique : jusqu'à l'étape 2, le rang définissait une plage OVR (Or = 60–72). Abandonné parce qu'un joueur qui écrase toutes ses parties restait bloqué en haut de la plage de son rang.
 
 ## 9. Transparence et règles Riot
 
 - La note n'est **jamais** utilisée pour trier ou classer des joueurs entre eux.
+- L'OVR est présenté comme une **performance face aux joueurs de son rang**, jamais comme un niveau estimé ou un « vrai rang » : pas de wording du type « joue comme un Diamant », pas de détecteur de smurf.
+- Le rang officiel est affiché sur la carte à côté de l'OVR, pour que la note soit toujours lue dans son contexte.
 - La page "Comment est calculée ma note" explique ce modèle publiquement.
 - Chaque carte affiche les 3 sous-stats qui ont le plus tiré la note vers le haut et vers le bas (explicabilité).
 
@@ -155,3 +150,29 @@ Les **attributs affichés** sur la carte sont les percentiles agrégés (pas bor
 - Tests unitaires par sous-stat avec des matchs JSON réels anonymisés (fixtures).
 - Tests de propriété : une stat améliorée ne fait jamais baisser l'attribut concerné.
 - Test de régression : un jeu de 20 joueurs de référence dont la note ne doit pas bouger sans changement volontaire du modèle.
+
+## Annexe — Formule provisoire (étape 2)
+
+Utilisée tant que les baselines (§5) n'existent pas. Même forme de sortie que le modèle final (6 attributs, `matchScore`, note /10, OVR), formules volontairement simplistes. **Remplacée à l'étape 4.**
+
+**Par match** (stats-engine) — une seule métrique par attribut, normalisée linéairement entre deux bornes fixes puis bornée à 0–100 : `norm(x) = clamp(100 × (x - bas) / (haut - bas), 0, 100)`. Durée en minutes, minimum 1.
+
+| Attribut | Métrique | Bas | Haut |
+|---|---|---|---|
+| AGR | `challenges.teamDamagePercentage` | 0.0 | 0.4 |
+| FRM | `(totalMinionsKilled + neutralMinionsKilled) / durée` | 0 | 10 |
+| VIS | `visionScore / durée` | 0 | 3 |
+| TEA | `challenges.killParticipation` | 0.0 | 1.0 |
+| SUR | `deaths / durée` (inversé) | 0.5 | 0 |
+| IMP | `damageDealtToObjectives / durée` | 0 | 1000 |
+
+- Métrique `challenges` absente (`null`) → attribut à 50 (neutre).
+- `matchScore` = moyenne simple des 6 attributs (pas de pondération par rôle).
+- Note /10 : formule du §6 (`3.0 + 7.0 × matchScore / 100`, arrondie à 0.1).
+
+**Par joueur** (card-service) :
+- Matchs retenus : files classées, durée ≥ 300 s ; les 30 plus récents (`gameCreation`).
+- Attributs de la carte = moyenne des attributs, arrondie à l'entier.
+- `OVR = round(clamp(moyenne des matchScore, 1, 99))` — ni récence ni shrinkage.
+- Carte **provisoire** si moins de 10 matchs retenus. Pas de carte tant qu'aucun match n'est retenu.
+- Forme : les 5 dernières notes /10, la plus récente en premier.
